@@ -13,6 +13,37 @@ const getStatusGudang = (stok) => (stok === 0 ? "Habis" : stok < 20 ? "Menipis" 
 const getStatusBarangJadi = (stok) => (stok === 0 ? "Habis" : stok <= 10 ? "Menipis" : "Aman");
 
 // ==========================================
+// API DATA PENGRAJIN
+// ==========================================
+app.get("/api/pengrajin", async (req, res) => {
+  try {
+    const result = await pool.query("SELECT * FROM pengrajin ORDER BY nama ASC");
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/pengrajin", async (req, res) => {
+  const { nama } = req.body;
+  try {
+    const result = await pool.query("INSERT INTO pengrajin (nama) VALUES ($1) RETURNING *", [nama]);
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: "Nama pengrajin sudah ada atau terjadi kesalahan." });
+  }
+});
+
+app.delete("/api/pengrajin/:id", async (req, res) => {
+  try {
+    await pool.query("DELETE FROM pengrajin WHERE id=$1", [req.params.id]);
+    res.json({ message: "Pengrajin berhasil dihapus" });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ==========================================
 // API DATA GUDANG (MATERIAL)
 // ==========================================
 app.get("/api/gudang", async (req, res) => {
