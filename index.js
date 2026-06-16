@@ -80,8 +80,10 @@ app.post("/api/gudang/stok/:id", async (req, res) => {
     await client.query("UPDATE barang_gudang SET stok = $1, status = $2 WHERE id = $3", [newStok, newStatus, id]);
 
     const namaPengambil = pergerakan === "masuk" ? "Admin" : pengambil;
+    
+    // Perbaikan: Hanya menggunakan CURRENT_TIMESTAMP murni (Sistem UTC yang akan ditangani React nanti)
     await client.query(
-      "INSERT INTO riwayat_gudang (nama, kategori, type, aktivitas, jumlah, pengambil, tanggal) VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')",
+      "INSERT INTO riwayat_gudang (nama, kategori, type, aktivitas, jumlah, pengambil, tanggal) VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP)",
       [item.nama, item.kategori, item.type, pergerakan, delta, namaPengambil]
     );
 
@@ -148,7 +150,6 @@ app.delete("/api/barang-jadi/:id", async (req, res) => {
 app.post("/api/barang-jadi/stok/:id", async (req, res) => {
   const { delta, pergerakan } = req.body;
   try {
-    // Ambil SEMUA data barang jadi untuk dicatat ke riwayat
     const itemRes = await pool.query("SELECT * FROM barang_jadi WHERE id = $1", [req.params.id]);
     const item = itemRes.rows[0];
 
@@ -157,9 +158,9 @@ app.post("/api/barang-jadi/stok/:id", async (req, res) => {
     
     await pool.query("UPDATE barang_jadi SET stok=$1, status=$2 WHERE id=$3", [newStok, getStatusBarangJadi(newStok), req.params.id]);
     
-    // CATAT KE RIWAYAT SEPATU
+    // Perbaikan: Hanya menggunakan CURRENT_TIMESTAMP murni
     await pool.query(
-      "INSERT INTO riwayat_barang_jadi (kode_barang, nama, ukuran, aktivitas, jumlah, tanggal) VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')",
+      "INSERT INTO riwayat_barang_jadi (kode_barang, nama, ukuran, aktivitas, jumlah, tanggal) VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP)",
       [item.kode_barang, item.nama, item.ukuran, pergerakan, delta]
     );
 
@@ -182,7 +183,6 @@ app.get("/api/riwayat", async (req, res) => {
   }
 });
 
-// API Baru untuk mengambil riwayat sepatu
 app.get("/api/riwayat-sepatu", async (req, res) => {
   try {
     const result = await pool.query("SELECT * FROM riwayat_barang_jadi ORDER BY tanggal DESC");
@@ -192,6 +192,13 @@ app.get("/api/riwayat-sepatu", async (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
+// ==========================================
+// RUTE HALAMAN DEPAN
+// ==========================================
+app.get("/", (req, res) => {
+  res.send("🚀 Server Backend Kotama Warehouse Berjalan Normal dan Siap Menerima Data!");
+});
+
+app.listen(PORT, "0.0.0.0", () => {
   console.log(`🚀 Server berjalan di http://localhost:${PORT}`);
 });
