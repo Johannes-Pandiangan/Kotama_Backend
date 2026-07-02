@@ -59,10 +59,18 @@ app.post("/api/gudang", async (req, res) => {
   const { nama, kategori, type, stok, satuan } = req.body;
   const status = getStatusGudang(stok);
   try {
+    // 1. Simpan barang baru
     const result = await pool.query(
       "INSERT INTO barang_gudang (nama, kategori, type, stok, satuan, status) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *",
       [nama, kategori, type, stok, satuan, status]
     );
+
+    // 2. Catat ke riwayat sebagai "stok awal"
+    await pool.query(
+      "INSERT INTO riwayat_gudang (nama, kategori, type, aktivitas, jumlah, pengambil, tanggal) VALUES ($1, $2, $3, 'stok awal', $4, 'Admin', CURRENT_TIMESTAMP)",
+      [nama, kategori, type, stok]
+    );
+
     res.json(result.rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -104,7 +112,11 @@ app.post("/api/gudang/stok/:id", async (req, res) => {
     if (itemRes.rows.length === 0) throw new Error("Barang tidak ditemukan");
     const item = itemRes.rows[0];
 
-    let newStok = pergerakan === "masuk" ? item.stok + delta : item.stok - delta;
+    // Gunakan Number() agar hitungan desimal (koma) aman dan tidak menjadi string
+    let currentStok = Number(item.stok);
+    let updateDelta = Number(delta);
+    let newStok = pergerakan === "masuk" ? currentStok + updateDelta : currentStok - updateDelta;
+    
     if (newStok < 0) return res.status(400).json({ error: "Gagal: Jumlah pengeluaran melebihi stok yang tersedia!" });
     
     const newStatus = getStatusGudang(newStok);
@@ -112,7 +124,6 @@ app.post("/api/gudang/stok/:id", async (req, res) => {
 
     const namaPengambil = pergerakan === "masuk" ? "Admin" : pengambil;
     
-    // Perbaikan: Hanya menggunakan CURRENT_TIMESTAMP murni (Sistem UTC yang akan ditangani React nanti)
     await client.query(
       "INSERT INTO riwayat_gudang (nama, kategori, type, aktivitas, jumlah, pengambil, tanggal) VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP)",
       [item.nama, item.kategori, item.type, pergerakan, delta, namaPengambil]
@@ -145,10 +156,18 @@ app.post("/api/barang-jadi", async (req, res) => {
   const { kode_barang, nama, ukuran, stok } = req.body; 
   const status = getStatusBarangJadi(stok);
   try {
+    // 1. Simpan barang jadi baru
     const result = await pool.query(
       "INSERT INTO barang_jadi (kode_barang, nama, ukuran, stok, status) VALUES ($1, $2, $3, $4, $5) RETURNING *",
       [kode_barang, nama, ukuran, stok, status]
     );
+
+    // 2. Catat ke riwayat sebagai "stok awal"
+    await pool.query(
+      "INSERT INTO riwayat_barang_jadi (kode_barang, nama, ukuran, aktivitas, jumlah, tanggal) VALUES ($1, $2, $3, 'stok awal', $4, CURRENT_TIMESTAMP)",
+      [kode_barang, nama, ukuran, stok]
+    );
+
     res.json(result.rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -184,12 +203,15 @@ app.post("/api/barang-jadi/stok/:id", async (req, res) => {
     const itemRes = await pool.query("SELECT * FROM barang_jadi WHERE id = $1", [req.params.id]);
     const item = itemRes.rows[0];
 
-    let newStok = pergerakan === "masuk" ? item.stok + delta : item.stok - delta;
+    // Gunakan Number() agar hitungan aman
+    let currentStok = Number(item.stok);
+    let updateDelta = Number(delta);
+    let newStok = pergerakan === "masuk" ? currentStok + updateDelta : currentStok - updateDelta;
+    
     if (newStok < 0) return res.status(400).json({ error: "Gagal: Jumlah pengeluaran melebihi stok sepatu saat ini!" });
     
     await pool.query("UPDATE barang_jadi SET stok=$1, status=$2 WHERE id=$3", [newStok, getStatusBarangJadi(newStok), req.params.id]);
     
-    // Perbaikan: Hanya menggunakan CURRENT_TIMESTAMP murni
     await pool.query(
       "INSERT INTO riwayat_barang_jadi (kode_barang, nama, ukuran, aktivitas, jumlah, tanggal) VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP)",
       [item.kode_barang, item.nama, item.ukuran, pergerakan, delta]
