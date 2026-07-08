@@ -59,13 +59,12 @@ app.post("/api/gudang", async (req, res) => {
   const { nama, kategori, type, stok, satuan } = req.body;
   const status = getStatusGudang(stok);
   try {
-    // 1. Simpan barang baru
     const result = await pool.query(
       "INSERT INTO barang_gudang (nama, kategori, type, stok, satuan, status) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *",
       [nama, kategori, type, stok, satuan, status]
     );
-
-    // 2. Catat ke riwayat sebagai "stok awal"
+    
+    // Pencatatan "Stok Awal" saat barang pertama kali dibuat
     await pool.query(
       "INSERT INTO riwayat_gudang (nama, kategori, type, aktivitas, jumlah, pengambil, tanggal) VALUES ($1, $2, $3, 'stok awal', $4, 'Admin', CURRENT_TIMESTAMP)",
       [nama, kategori, type, stok]
@@ -92,10 +91,24 @@ app.put("/api/gudang/:id", async (req, res) => {
   }
 });
 
+// LOGIKA HAPUS OTOMATIS RIWAYAT BAHAN BAKU
 app.delete("/api/gudang/:id", async (req, res) => {
   try {
-    await pool.query("DELETE FROM barang_gudang WHERE id=$1", [req.params.id]);
-    res.json({ message: "Barang berhasil dihapus" });
+    const { id } = req.params;
+    
+    // 1. Ambil data nama dan type barang sebelum dihapus
+    const barangRes = await pool.query("SELECT nama, type FROM barang_gudang WHERE id = $1", [id]);
+    
+    if (barangRes.rows.length > 0) {
+      const { nama, type } = barangRes.rows[0];
+      // 2. Hapus seluruh riwayat yang berhubungan dengan nama & type tersebut
+      await pool.query("DELETE FROM riwayat_gudang WHERE nama = $1 AND type = $2", [nama, type]);
+    }
+
+    // 3. Hapus barang dari daftar utama
+    await pool.query("DELETE FROM barang_gudang WHERE id=$1", [id]);
+    
+    res.json({ message: "Barang beserta seluruh riwayatnya berhasil dihapus" });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -112,7 +125,7 @@ app.post("/api/gudang/stok/:id", async (req, res) => {
     if (itemRes.rows.length === 0) throw new Error("Barang tidak ditemukan");
     const item = itemRes.rows[0];
 
-    // Gunakan Number() agar hitungan desimal (koma) aman dan tidak menjadi string
+    // Menjamin angka bisa dibaca sebagai desimal (koma) jika satuannya meter/kaki
     let currentStok = Number(item.stok);
     let updateDelta = Number(delta);
     let newStok = pergerakan === "masuk" ? currentStok + updateDelta : currentStok - updateDelta;
@@ -126,7 +139,7 @@ app.post("/api/gudang/stok/:id", async (req, res) => {
     
     await client.query(
       "INSERT INTO riwayat_gudang (nama, kategori, type, aktivitas, jumlah, pengambil, tanggal) VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP)",
-      [item.nama, item.kategori, item.type, pergerakan, delta, namaPengambil]
+      [item.nama, item.kategori, item.type, pergerakan, updateDelta, namaPengambil]
     );
 
     await client.query("COMMIT");
@@ -156,13 +169,12 @@ app.post("/api/barang-jadi", async (req, res) => {
   const { kode_barang, nama, ukuran, stok } = req.body; 
   const status = getStatusBarangJadi(stok);
   try {
-    // 1. Simpan barang jadi baru
     const result = await pool.query(
       "INSERT INTO barang_jadi (kode_barang, nama, ukuran, stok, status) VALUES ($1, $2, $3, $4, $5) RETURNING *",
       [kode_barang, nama, ukuran, stok, status]
     );
-
-    // 2. Catat ke riwayat sebagai "stok awal"
+    
+    // Pencatatan "Stok Awal" untuk barang jadi
     await pool.query(
       "INSERT INTO riwayat_barang_jadi (kode_barang, nama, ukuran, aktivitas, jumlah, tanggal) VALUES ($1, $2, $3, 'stok awal', $4, CURRENT_TIMESTAMP)",
       [kode_barang, nama, ukuran, stok]
@@ -188,10 +200,24 @@ app.put("/api/barang-jadi/:id", async (req, res) => {
   }
 });
 
+// LOGIKA HAPUS OTOMATIS RIWAYAT BARANG JADI
 app.delete("/api/barang-jadi/:id", async (req, res) => {
   try {
-    await pool.query("DELETE FROM barang_jadi WHERE id=$1", [req.params.id]);
-    res.json({ message: "Sepatu berhasil dihapus" });
+    const { id } = req.params;
+    
+    // 1. Ambil data nama dan ukuran sepatu sebelum dihapus
+    const sepatuRes = await pool.query("SELECT nama, ukuran FROM barang_jadi WHERE id = $1", [id]);
+    
+    if (sepatuRes.rows.length > 0) {
+      const { nama, ukuran } = sepatuRes.rows[0];
+      // 2. Hapus seluruh riwayat yang berhubungan dengan nama & ukuran tersebut
+      await pool.query("DELETE FROM riwayat_barang_jadi WHERE nama = $1 AND ukuran = $2", [nama, ukuran]);
+    }
+
+    // 3. Hapus sepatu dari daftar utama
+    await pool.query("DELETE FROM barang_jadi WHERE id=$1", [id]);
+    
+    res.json({ message: "Sepatu beserta seluruh riwayatnya berhasil dihapus" });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -203,7 +229,6 @@ app.post("/api/barang-jadi/stok/:id", async (req, res) => {
     const itemRes = await pool.query("SELECT * FROM barang_jadi WHERE id = $1", [req.params.id]);
     const item = itemRes.rows[0];
 
-    // Gunakan Number() agar hitungan aman
     let currentStok = Number(item.stok);
     let updateDelta = Number(delta);
     let newStok = pergerakan === "masuk" ? currentStok + updateDelta : currentStok - updateDelta;
@@ -214,7 +239,7 @@ app.post("/api/barang-jadi/stok/:id", async (req, res) => {
     
     await pool.query(
       "INSERT INTO riwayat_barang_jadi (kode_barang, nama, ukuran, aktivitas, jumlah, tanggal) VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP)",
-      [item.kode_barang, item.nama, item.ukuran, pergerakan, delta]
+      [item.kode_barang, item.nama, item.ukuran, pergerakan, updateDelta]
     );
 
     res.json({ message: "Stok sepatu berhasil diupdate dan dicatat ke riwayat" });
